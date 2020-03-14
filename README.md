@@ -1,0 +1,2 @@
+# NewSwagger
+Personalised news aggregator
