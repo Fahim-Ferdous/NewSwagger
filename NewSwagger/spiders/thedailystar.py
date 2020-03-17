@@ -1,5 +1,6 @@
 """ Aggregate The Daily Star for seuptitious purposes"""
 # -*- coding: utf-8 -*-
+from datetime import datetime
 import scrapy
 
 
@@ -12,14 +13,20 @@ class ThedailystarSpider(scrapy.Spider):
     start_urls = ['http://thedailystar.net/newspaper?date=2020-03-14']
 
     def parse(self, response):
-        for pane in response.css('.pane-news-col'):
-            page = pane.css('h2::text').extract_first()
-            yield {
-                'paperPage': page,
-            }
+        for href in response.css('h5 > a::attr(href)').extract():
+            yield response.follow(href, callback=self.parseArticle)
 
-            for title in pane.css('h5 > a::text'):
-                yield {
-                    'title': title.extract(),
-                    'parentPage': page,
-                }
+    def parseArticle(self, response):
+        smallText = response.\
+                css('.small-text > meta[itemprop]::attr(content)').\
+                extract()
+
+        yield {
+            'title': response.css('h1::text').extract_first(),
+            'paperPage':
+                response.
+                css('.breadcrumb span[itemprop=name]::text').
+            extract()[-1],
+            'published': datetime.fromisoformat(smallText[0]),
+            'modified': datetime.fromisoformat(smallText[0]),
+        }

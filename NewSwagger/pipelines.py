@@ -7,7 +7,6 @@
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 
 from scrapy.exceptions import DropItem
 
@@ -23,6 +22,8 @@ class PaperPagePipeline(object):
         Base.metadata.create_all(engine)
         self.session = Session()
 
+        self.paperPageIDs = {}
+
     @classmethod
     def from_crawler(cls, crawler):
         return cls(
@@ -37,12 +38,31 @@ class PaperPagePipeline(object):
         finally:
             self.session.close()
 
-    def process_item(self, item, spider):
+    def queryPaperPageID(self, paperPage):
+        return self.session.query(PaperPage).\
+            filter(PaperPage.paperPage == paperPage).\
+            with_entities(PaperPage.id).first()
+
+    def getPaperPageID(self, paperPage):
+        id_ = self.paperPageIDs.get(paperPage)
+        if id_ is None:
+            row = self.queryPaperPageID(paperPage)
+            if row is None:
+                self.session.add(PaperPage(paperPage=paperPage))
+            row = self.queryPaperPageID(paperPage)
+
+            id_ = row[0]
+            self.paperPageIDs[paperPage] = id_
+
+        return id_
+
+    # TODO: Add authors
+    def process_item(self, item, _):
         cls = None
-        if item.get('paperPage'):
-            cls = PaperPage
-        elif item.get('title'):
+        if item.get('title'):
             cls = Article
+            item['paperPage_id'] = self.getPaperPageID(item['paperPage'])
+            del item['paperPage']
 
         if cls:
             self.session.add(cls(**item))
