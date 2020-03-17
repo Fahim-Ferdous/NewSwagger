@@ -13,11 +13,13 @@ class ThedailystarSpider(scrapy.Spider):
 
     def parse(self, response):
         for pane in response.css('.pane-news-col'):
+            page = pane.css('h2::text').extract_first()
             yield {
-                pane.css('h2::text').extract_first():
-                    [
-                        text.strip()
-                        for text in
-                        pane.css('h5 > a::text').extract()
-                    ],
+                'paperPage': page,
             }
+
+            for title in pane.css('h5 > a::text'):
+                yield {
+                    'title': title.extract(),
+                    'parentPage': page,
+                }
