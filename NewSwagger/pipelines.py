@@ -7,6 +7,7 @@
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from scrapy.exceptions import DropItem
 
@@ -16,7 +17,7 @@ from .models import PaperPage, Article
 
 class PaperPagePipeline(object):
     def __init__(self, uri):
-        engine = create_engine(uri, echo=True)
+        engine = create_engine(uri)
         Session = sessionmaker()
         Session.configure(bind=engine)
         Base.metadata.create_all(engine)
@@ -33,7 +34,7 @@ class PaperPagePipeline(object):
     def close_spider(self, spider):
         try:
             self.session.commit()
-        except:
+        except SQLAlchemyError:
             self.session.rollback()
         finally:
             self.session.close()
