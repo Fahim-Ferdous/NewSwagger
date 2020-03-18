@@ -59,8 +59,20 @@ class ThedailystarSpider(scrapy.Spider):
                 extract()
 
         try:
+            author = response.css('a[href^=\\/author]')
+            if author:
+                author = list(zip(
+                    author.css('::text').extract(),
+                    author.css('::attr(href)').extract()
+                ))
+            else:
+                author = [(
+                    response.css('span[itemprop=name]::text')[-1].get(),
+                    None,
+                )]
             yield {
                 'title': title,
+                'authors': author,
                 'paperPage': parentPage,
                 'published': datetime.datetime.fromisoformat(smallText[0]),
                 'modified': datetime.datetime.fromisoformat(smallText[1]),
@@ -79,8 +91,13 @@ class ThedailystarSpider(scrapy.Spider):
 
     def parseInFocusArticle(self, response, title, parentURL, parentPage):
         meta = response.css('meta[property^=article]::attr(content)').extract()
+        author = response.css('p[class=author] > a')
         yield {
             'title': title,
+            'authors': list(zip(
+                author.css('::text').extract(),
+                author.css('::attr(href)').extract(),
+            )),
             'paperPage': parentPage,
             'published': datetime.datetime.fromisoformat(meta[0]),
             'modified': datetime.datetime.fromisoformat(meta[1]),

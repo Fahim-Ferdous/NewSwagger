@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from scrapy.exceptions import DropItem
 
 from .models import Base
-from .models import PaperPage, Article
+from .models import PaperPage, Article, Author, author_articles
 
 
 class PaperPagePipeline(object):
@@ -57,16 +57,16 @@ class PaperPagePipeline(object):
 
         return id_
 
-    # TODO: Add authors
     def process_item(self, item, _):
-        cls = None
-        if item.get('title'):
-            cls = Article
-            item['paperPage_id'] = self.getPaperPageID(item['paperPage'])
-            del item['paperPage']
+        item['paperPage_id'] = self.getPaperPageID(item['paperPage'])
+        authors = [Author(i[0].strip(), i[1]) for i in item['authors']]
+        del item['paperPage'], item['authors']
 
-        if cls:
-            self.session.add(cls(**item))
-        else:
-            DropItem(f'Unimplemented item {item}')
-        return item
+        article = Article(**item)
+        self.session.add(article)
+        for author in authors:
+            article.authors.append(author)
+            try:
+                self.session.commit()
+            except SQLAlchemyError:
+                self.session.rollback()
