@@ -17,7 +17,7 @@ class ThedailystarSpider(scrapy.Spider):
 
     def start_requests(self):
         filename = 'lastdate.txt'
-        lastdate = datetime.date.today()
+        lastdate = datetime.date(2020, 1, 1)
         try:
             with open(filename) as datefile:
                 lastdate = datetime.datetime.\
@@ -45,9 +45,7 @@ class ThedailystarSpider(scrapy.Spider):
             for anchor in pane.css('h5 > a'):
                 yield response.follow(
                     anchor.attrib['href'],
-                    callback=self.parseArticle
-                    if page != 'In Focus'
-                    else self.parseInFocusArticle,
+                    callback=self.parseArticle,
                     cb_kwargs={
                         'parentPage': page,
                         'title': anchor.css('::text').get(),
@@ -66,9 +64,18 @@ class ThedailystarSpider(scrapy.Spider):
                 'paperPage': parentPage,
                 'published': datetime.datetime.fromisoformat(smallText[0]),
                 'modified': datetime.datetime.fromisoformat(smallText[1]),
+                'body': '\n\n'.join(
+                    response.css('.field-body p::text').extract(),
+                ).strip(),
             }
-        except IndexError:  # TODO: Handle articles of `In Focus' section
-            self.log(response.request.url+' >>>> '+parentURL, logging.WARNING)
+
+        except IndexError:
+            try:
+                yield next(self.parseInFocusArticle(response, title,
+                                                    parentURL, parentPage))
+            except StopIteration:
+                self.log(response.request.url+' >>>> '+parentURL,
+                         logging.WARNING)
 
     def parseInFocusArticle(self, response, title, parentURL, parentPage):
         meta = response.css('meta[property^=article]::attr(content)').extract()
@@ -78,4 +85,7 @@ class ThedailystarSpider(scrapy.Spider):
             'paperPage': parentPage,
             'published': datetime.datetime.fromisoformat(meta[0]),
             'modified': datetime.datetime.fromisoformat(meta[1]),
+            'body': '\n\n'.join(
+                response.css('div .description p::text').extract(),
+            ).strip(),
         }

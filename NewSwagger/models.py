@@ -27,6 +27,8 @@ class Article(Base):
     published = Column(DateTime)
     modified = Column(DateTime)
     title = Column(String)
+    body = Column(String)
+
     paperPage_id = Column(Integer, ForeignKey('paperpages.id'))
 
     def __repr__(self):
