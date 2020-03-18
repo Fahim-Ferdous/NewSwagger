@@ -17,7 +17,7 @@ class ThedailystarSpider(scrapy.Spider):
 
     def start_requests(self):
         filename = 'lastdate.txt'
-        lastdate = datetime.date(2020, 1, 1)
+        lastdate = datetime.date(2019, 1, 1)
         try:
             with open(filename) as datefile:
                 lastdate = datetime.datetime.\
@@ -79,7 +79,6 @@ class ThedailystarSpider(scrapy.Spider):
 
     def parseInFocusArticle(self, response, title, parentURL, parentPage):
         meta = response.css('meta[property^=article]::attr(content)').extract()
-        self.log('In Focus', logging.INFO)
         yield {
             'title': title,
             'paperPage': parentPage,
