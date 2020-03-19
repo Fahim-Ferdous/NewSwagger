@@ -64,9 +64,10 @@ class PaperPagePipeline(object):
 
         article = Article(**item)
         self.session.add(article)
+        self.session.commit()
         for author in authors:
-            article.authors.append(author)
             try:
+                article.authors.append(author)
                 self.session.commit()
             except SQLAlchemyError:
                 self.session.rollback()

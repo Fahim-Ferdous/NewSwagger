@@ -96,4 +96,4 @@ RETRY_ENABLED = True
 RETRY_TIMES = 5
 RETRY_HTTP_CODES = [503]
 
-DBURI = 'sqlite:///db.sqlite3'
+DBURI = 'sqlite:///tmpfs/db.sqlite3'
