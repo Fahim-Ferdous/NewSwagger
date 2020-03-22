@@ -1,12 +1,13 @@
 """ Aggregate The Daily Star for seuptitious purposes"""
 # -*- coding: utf-8 -*-
-import datetime
 import logging
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlsplit
 from collections import defaultdict
+from datetime import date, datetime, timedelta
 
 import scrapy
 from scrapy import Request
+from scrapy.selector.unified import SelectorList
 
 
 class ThedailystarSpider(scrapy.Spider):
@@ -18,8 +19,8 @@ class ThedailystarSpider(scrapy.Spider):
     start_urls = []
 
     progress_dict = defaultdict(int)
-    lastdate = datetime.date(2019, 1, 1)
-    datelimit = datetime.date.today()
+    lastdate = date(2019, 1, 1)
+    datelimit = date.today()
     totaldays = None
     done = 0
 
@@ -27,7 +28,7 @@ class ThedailystarSpider(scrapy.Spider):
         filename = 'lastdate.txt'
         try:
             with open(filename) as datefile:
-                self.lastdate = datetime.datetime.\
+                self.lastdate = datetime.\
                         strptime(datefile.read().strip(), '%Y-%m-%d').\
                         date()
         except FileNotFoundError:
@@ -41,27 +42,39 @@ class ThedailystarSpider(scrapy.Spider):
                 yield Request(
                     'http://thedailystar.net/newspaper?date=' +
                     str(self.lastdate),
-                    self.parse,
+                    self.parse_page,
                 )
-                self.lastdate += datetime.timedelta(days=1)
+                self.lastdate += timedelta(days=1)
         finally:
             with open(filename, 'w') as datefile:
                 print(str(self.lastdate), file=datefile)
 
     def parse(self, response):
-        date = None
+        ''' This function is only to help when you
+            run scrapy with the `parse' parameter.
+        '''
+        if urlsplit(response.request.url).path != '/newspaper':
+            try:
+                yield next(self.parse_article(response))
+            except StopIteration:
+                pass
+        else:
+            self.parse_page(response)
+
+    def parse_page(self, response):
+        article_date = str(date.today())
         try:
-            date = parse_qsl(response.request.url)[0][1]
+            article_date = parse_qsl(response.request.url)[0][1]
         except IndexError:
-            date = str(datetime.date.today())
+            pass
 
         for pane in response.css('.pane-news-col'):
             page = pane.css('h2::text').extract_first()
             for anchor in pane.css('h5 > a'):
-                self.progress_dict[date] += 1
+                self.progress_dict[article_date] += 1
                 yield response.follow(
                     anchor.attrib['href'],
-                    callback=self.parseArticle,
+                    callback=self.parse_article,
                     cb_kwargs={
                         'parentPage': page,
                         'title': anchor.css('::text').get(),
@@ -69,15 +82,14 @@ class ThedailystarSpider(scrapy.Spider):
                     }
                 )
 
-    def parseArticle(self, response, parentURL, title, parentPage):
+    def parse_article(self, response):
         try:
             author = response.css('a[href^=\\/author]')
-            smallText = response.\
-                css('.small-text > meta[itemprop]::attr(content)').\
-                extract()
+            published = response.\
+                css('meta[itemprop=datePublished]::attr(content)').get()
             if author:
                 author = list(zip(
-                    author.css('::text').extract(),
+                    [i.strip() for i in author.css('::text').extract()],
                     author.css('::attr(href)').extract()
                 ))
             else:
@@ -85,50 +97,82 @@ class ThedailystarSpider(scrapy.Spider):
                     response.css('span[itemprop=name]::text')[-1].get(),
                     None,
                 )]
+            paper_page = response.css('.breadcrumb span span::text')[-1].get()
             item = {
+                'title': response.css('h1::text').get(),
                 'authors': author,
-                'paperPage': parentPage,
-                'published': smallText[0],
-                'modified': smallText[1],
-                'body': response.css('.field-body p::text').extract(),
+                'paperPage': paper_page,
+                'published': published,
+                'body': response.css(', '.join([
+                    'h2 em::text',
+                    'div .caption::text',
+                    'div .field-body p::text',
+                    'div .field-body p h2::text',
+                    'div .field-body p strong::text',
+                ])).extract(),
             }
 
         except IndexError:
             try:
-                item = next(self.parseInFocusArticle(response, parentPage))
+                item = next(self.parse_special_article(response))
             except StopIteration:
                 pass
 
-        date = item['published'].split('T')[0]
-        self.progress_dict[date] -= 1
+        article_date = item['published'].split('T')[0]
+        self.progress_dict[article_date] -= 1
 
-        if not self.progress_dict[date]:
-            days = self.totaldays
+        if not self.progress_dict[article_date]:
             self.done += 1
 
             progress = round(self.done / self.totaldays * 100, 2)
             self.log(
-                f'Completed date: {date} ({progress}% {self.done} of {days})',
+                'Completed date: {} ({}% {} of {})'.format(
+                    article_date, progress, self.done, self.totaldays,
+                ),
                 logging.INFO,
             )
-            del self.progress_dict[date]
+            del self.progress_dict[article_date]
 
-        item['title'] = title
-        item['published'] = datetime.datetime.fromisoformat(item['published'])
-        item['modified'] = datetime.datetime.fromisoformat(item['modified'])
-        item['body'] = '\n\n'.join(item['body']).strip()
+        item['url'] = response.request.url
+        item['published'] = datetime.fromisoformat(item['published']).date()
+        item['body'] = '\n'.join(item['body']).strip()
         yield item
 
-    def parseInFocusArticle(self, response, parentPage):
-        meta = response.css('meta[property^=article]::attr(content)').extract()
-        author = response.css('p[class=author] > a')
+    def parse_special_article(self, response):
+        ''' Parse article with dark backround.
+            Example:
+                https://www.thedailystar.net/in-focus/news/pandemics-changed-history-1881355
+        '''
+
+        authors = []
+        selection = response.css('p.author > a')
+        if selection:
+            authors.extend(list(zip(
+                selection.css('::text').extract(),
+                selection.css('::attr(href)').extract(),
+            )))
+
+        selection = response.css('p.author::text')
+        if selection:
+            authors.extend(
+                [
+                    (i.strip(), None)
+                    for i in selection.extract()
+                    if i.strip() not in ['and']
+                ]
+            )
+
+        paper_page = urlsplit(response.request.url).path.split('/')[1].title()
         yield {
-            'authors': list(zip(
-                author.css('::text').extract(),
-                author.css('::attr(href)').extract(),
-            )),
-            'paperPage': parentPage,
-            'published': meta[0],
-            'modified': meta[1],
-            'body': response.css('div .description p::text').extract(),
+            'title': response.css('h1::text').get(),
+            'authors': authors,
+            'paperPage': paper_page,
+            'published':
+                response.css('meta[property^=article]::attr(content)').get(),
+            'body': response.css(', '.join([
+                'h2 em::text',
+                'div .description p::text',
+                'div .description p strong::text',
+                'div .caption::text',
+            ])).extract(),
         }

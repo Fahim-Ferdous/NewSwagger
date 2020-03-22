@@ -1,7 +1,7 @@
 """ Generic models are defined here. """
 from sqlalchemy.ext.declarative import declarative_base
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Date, ForeignKey, Table
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
@@ -31,10 +31,10 @@ class Article(Base):
     __tablename__ = 'articles'
 
     id = Column(Integer, primary_key=True)
-    published = Column(DateTime)
-    modified = Column(DateTime)
+    published = Column(Date)
     title = Column(String)
     body = Column(String)
+    url = Column(String)
 
     paperPage_id = Column(Integer, ForeignKey('paperpages.id'))
     authors = relationship(
