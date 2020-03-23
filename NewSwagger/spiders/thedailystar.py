@@ -55,7 +55,7 @@ class ThedailystarSpider(scrapy.Spider):
         '''
         if urlsplit(response.request.url).path != '/newspaper':
             try:
-                yield next(self.parse_article(response))
+                yield next(self.parse_article(response, None))
             except StopIteration:
                 pass
         else:
@@ -69,24 +69,21 @@ class ThedailystarSpider(scrapy.Spider):
             pass
 
         for pane in response.css('.pane-news-col'):
-            page = pane.css('h2::text').extract_first()
+            paper_page = pane.css('h2::text').get()
             for anchor in pane.css('h5 > a'):
                 self.progress_dict[article_date] += 1
                 yield response.follow(
                     anchor.attrib['href'],
                     callback=self.parse_article,
-                    cb_kwargs={
-                        'parentPage': page,
-                        'title': anchor.css('::text').get(),
-                        'parentURL': response.request.url,
-                    }
+                    cb_kwargs={'paper_page': paper_page},
                 )
 
-    def parse_article(self, response):
+    def parse_article(self, response, paper_page):
         try:
             author = response.css('a[href^=\\/author]')
             published = response.\
-                css('meta[itemprop=datePublished]::attr(content)').get()
+                css('meta[itemprop=datePublished]::attr(content)').\
+                get().split('T')[0]
             if author:
                 author = list(zip(
                     [i.strip() for i in author.css('::text').extract()],
@@ -97,28 +94,30 @@ class ThedailystarSpider(scrapy.Spider):
                     response.css('span[itemprop=name]::text')[-1].get(),
                     None,
                 )]
-            paper_page = response.css('.breadcrumb span span::text')[-1].get()
             item = {
                 'title': response.css('h1::text').get(),
                 'authors': author,
-                'paperPage': paper_page,
                 'published': published,
                 'body': response.css(', '.join([
                     'h2 em::text',
                     'div .caption::text',
                     'div .field-body p::text',
+                    'div .field-body p em::text',
                     'div .field-body p h2::text',
+                    'div .field-body p span::text',
                     'div .field-body p strong::text',
+                    'div .field-body div::text',
+                    'div .field-body div span::text',
                 ])).extract(),
             }
 
-        except IndexError:
+        except (IndexError, AttributeError):
             try:
                 item = next(self.parse_special_article(response))
             except StopIteration:
                 pass
 
-        article_date = item['published'].split('T')[0]
+        article_date = item['published']
         self.progress_dict[article_date] -= 1
 
         if not self.progress_dict[article_date]:
@@ -134,8 +133,9 @@ class ThedailystarSpider(scrapy.Spider):
             del self.progress_dict[article_date]
 
         item['url'] = response.request.url
-        item['published'] = datetime.fromisoformat(item['published']).date()
+        item['published'] = datetime.fromisoformat(article_date).date()
         item['body'] = '\n'.join(item['body']).strip()
+        item['paperPage'] = paper_page
         yield item
 
     def parse_special_article(self, response):
@@ -162,11 +162,9 @@ class ThedailystarSpider(scrapy.Spider):
                 ]
             )
 
-        paper_page = urlsplit(response.request.url).path.split('/')[1].title()
         yield {
             'title': response.css('h1::text').get(),
             'authors': authors,
-            'paperPage': paper_page,
             'published':
                 response.css('meta[property^=article]::attr(content)').get(),
             'body': response.css(', '.join([
